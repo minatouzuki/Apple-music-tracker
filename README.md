@@ -1,4 +1,4 @@
-# Now Playing — for Windows
+# Apple Music Tracker — for Windows
 
 See what's playing on your PC and control it from a terminal.
 Works with Apple Music, Spotify, YouTube in a browser — anything that
