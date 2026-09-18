@@ -18,11 +18,16 @@ Usage:
     python nowplaying.py next       next track
     python nowplaying.py prev       previous track
     python nowplaying.py watch      live feed of track changes (Ctrl+C to stop)
+
+    # Publish every song change to a relay so Itsuki can notify you on WhatsApp:
+    python nowplaying.py watch --relay <relay-id>
 """
 
 import argparse
 import asyncio
+import json as jsonlib
 import sys
+import urllib.request
 
 try:
     from winsdk.windows.media.control import (
@@ -76,6 +81,27 @@ def show(info):
     print(line)
 
 
+def publish_relay(relay_id, info):
+    """POST the current track to the relay so Itsuki can notify on WhatsApp."""
+    body = jsonlib.dumps({
+        "title": info["title"],
+        "artist": info["artist"],
+        "album": info["album"],
+        "status": info["status"],
+    }).encode("utf-8")
+    try:
+        req = urllib.request.Request(
+            "https://webhook.site/" + relay_id,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+    except Exception as exc:
+        print("(couldn't publish update: %s)" % exc)
+
+
 async def cmd_status(_args):
     show(await current_info())
 
@@ -104,7 +130,10 @@ async def cmd_control(action):
         print("The app didn't accept '%s'." % action)
 
 
-async def cmd_watch(_args):
+async def cmd_watch(args):
+    relay = getattr(args, "relay", None)
+    if relay:
+        print("Publishing song changes to Itsuki for WhatsApp tracking.\n")
     print("Watching for track changes - press Ctrl+C to stop.\n")
     last = None
     try:
@@ -114,6 +143,8 @@ async def cmd_watch(_args):
             if key != last:
                 last = key
                 show(info)
+                if relay and info and info["title"]:
+                    publish_relay(relay, info)
             await asyncio.sleep(1.5)
     except KeyboardInterrupt:
         print("\nStopped.")
@@ -126,7 +157,13 @@ def main():
     sub.add_parser("status", help="Show the current track.")
     for name in ("play", "pause", "toggle", "next", "prev"):
         sub.add_parser(name, help="Control playback: %s." % name)
-    sub.add_parser("watch", help="Live feed of track changes.")
+    watch_parser = sub.add_parser("watch", help="Live feed of track changes.")
+    watch_parser.add_argument(
+        "--relay",
+        default=None,
+        metavar="RELAY_ID",
+        help="Publish each song change to the relay so Itsuki can notify you on WhatsApp.",
+    )
 
     args = parser.parse_args()
     if args.command == "status":
